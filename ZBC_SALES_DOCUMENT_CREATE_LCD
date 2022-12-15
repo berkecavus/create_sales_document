@@ -1,0 +1,33 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBC_SALES_DOCUMENT_CREATE_LCD
+*&---------------------------------------------------------------------*
+
+CLASS LCL_MAIN DEFINITION.
+
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      BUTTON_SELECTION,
+      CREATE_XLS_FROM_ITAB
+                     IMPORTING
+                               IT_FIELDCAT      TYPE LVC_T_FCAT OPTIONAL
+                               IT_SORT          TYPE LVC_T_SORT OPTIONAL
+                               IT_FILT          TYPE LVC_T_FILT OPTIONAL
+                               IS_LAYOUT        TYPE LVC_S_LAYO OPTIONAL
+                               I_XLSX           TYPE FLAG       OPTIONAL
+                     CHANGING
+                               CT_DATA          TYPE STANDARD TABLE OPTIONAL
+                     RETURNING VALUE(E_XSTRING) TYPE XSTRING,
+      DOWNLOAD_EXCEL_TEMPLATE,
+      GET_EXCEL_FIELD,
+      FUNCTIONS
+                    FOR EVENT IF_SALV_EVENTS_FUNCTIONS~ADDED_FUNCTION
+                           OF CL_SALV_EVENTS_TABLE,
+      UPLOAD_EXCEL_FILE,
+      RUN,
+      READ_EXCEL_FILE,
+      CREATE_DYNAMIC_ITAB,
+      SCREEN        IMPORTING
+                      I_TABLE    TYPE STANDARD TABLE
+                      I_GUI_NAME TYPE CHAR20
+                      I_FLAG     TYPE CHAR1.
+ENDCLASS.

@@ -1,0 +1,550 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBC_SALES_DOCUMENT_CREATE_LCI
+*&---------------------------------------------------------------------*
+CLASS LCL_MAIN IMPLEMENTATION.
+
+  METHOD BUTTON_SELECTION.
+
+    LCL_MAIN=>GET_EXCEL_FIELD( ).
+
+    CASE SSCRFIELDS-UCOMM.
+      WHEN 'FC01'.
+        LCL_MAIN=>DOWNLOAD_EXCEL_TEMPLATE( ).
+      WHEN 'FC02'.
+        LCL_MAIN=>SCREEN(
+          EXPORTING
+            I_TABLE    = NEW_FIELDS[]
+            I_GUI_NAME = 'ZSTATUS'
+            I_FLAG     = ABAP_TRUE
+        ).
+    ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD CREATE_XLS_FROM_ITAB.
+
+    DATA: MT_FCAT TYPE LVC_T_FCAT.
+    DATA: MT_DATA TYPE REF TO DATA.
+    DATA: M_FLAVOUR TYPE STRING.
+    DATA: M_VERSION TYPE STRING.
+    DATA: MO_RESULT_DATA TYPE REF TO CL_SALV_EX_RESULT_DATA_TABLE.
+    DATA: MO_COLUMNS  TYPE REF TO CL_SALV_COLUMNS_TABLE.
+    DATA: MO_AGGREG   TYPE REF TO CL_SALV_AGGREGATIONS.
+    DATA: MO_SALV_TABLE  TYPE REF TO CL_SALV_TABLE.
+    DATA: M_FILE_TYPE TYPE SALV_BS_CONSTANT.
+    FIELD-SYMBOLS <TAB> TYPE ANY TABLE.
+
+    GET REFERENCE OF CT_DATA INTO MT_DATA.
+
+*if we didn't pass fieldcatalog we need to create it
+    IF IT_FIELDCAT[] IS INITIAL.
+      ASSIGN MT_DATA->* TO <TAB>.
+      TRY .
+          CL_SALV_TABLE=>FACTORY(
+          EXPORTING
+            LIST_DISPLAY = ABAP_FALSE
+          IMPORTING
+            R_SALV_TABLE = MO_SALV_TABLE
+          CHANGING
+            T_TABLE      = <TAB> ).
+        CATCH CX_SALV_MSG.
+
+      ENDTRY.
+      "get colums & aggregation infor to create fieldcat
+      MO_COLUMNS  = MO_SALV_TABLE->GET_COLUMNS( ).
+      MO_AGGREG   = MO_SALV_TABLE->GET_AGGREGATIONS( ).
+      MT_FCAT     =  CL_SALV_CONTROLLER_METADATA=>GET_LVC_FIELDCATALOG(
+                                    R_COLUMNS      = MO_COLUMNS
+                                    R_AGGREGATIONS = MO_AGGREG ).
+    ELSE.
+*else we take the one we passed
+      MT_FCAT[] = IT_FIELDCAT[].
+    ENDIF.
+
+    IF CL_SALV_BS_A_XML_BASE=>GET_VERSION( ) EQ IF_SALV_BS_XML=>VERSION_25 OR
+       CL_SALV_BS_A_XML_BASE=>GET_VERSION( ) EQ IF_SALV_BS_XML=>VERSION_26.
+
+      MO_RESULT_DATA = CL_SALV_EX_UTIL=>FACTORY_RESULT_DATA_TABLE(
+          R_DATA                      = MT_DATA
+          S_LAYOUT                    = IS_LAYOUT
+          T_FIELDCATALOG              = MT_FCAT
+          T_SORT                      = IT_SORT
+          T_FILTER                    = IT_FILT
+      ).
+
+      CASE CL_SALV_BS_A_XML_BASE=>GET_VERSION( ).
+        WHEN IF_SALV_BS_XML=>VERSION_25.
+          M_VERSION = IF_SALV_BS_XML=>VERSION_25.
+        WHEN IF_SALV_BS_XML=>VERSION_26.
+          M_VERSION = IF_SALV_BS_XML=>VERSION_26.
+      ENDCASE.
+
+      "if we flag i_XLSX then we'll create XLSX if not then MHTML excel file
+      M_FILE_TYPE = IF_SALV_BS_XML=>C_TYPE_XLSX.
+
+
+      M_FLAVOUR = IF_SALV_BS_C_TT=>C_TT_XML_FLAVOUR_EXPORT.
+      "transformation of data to excel
+      CALL METHOD CL_SALV_BS_TT_UTIL=>IF_SALV_BS_TT_UTIL~TRANSFORM
+        EXPORTING
+          XML_TYPE      = M_FILE_TYPE
+          XML_VERSION   = M_VERSION
+          R_RESULT_DATA = MO_RESULT_DATA
+          XML_FLAVOUR   = M_FLAVOUR
+          GUI_TYPE      = IF_SALV_BS_XML=>C_GUI_TYPE_GUI
+        IMPORTING
+          XML           = E_XSTRING.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD DOWNLOAD_EXCEL_TEMPLATE.
+
+    DATA: V_FILENAME TYPE STRING,
+          V_PATH     TYPE STRING,
+          V_FULLPATH TYPE STRING,
+          V_RESULT   TYPE I.
+    DATA: T_BINTAB TYPE SOLIX_TAB,
+          V_SIZE   TYPE I.
+
+    "Convert Excel headers to xstring
+    LCL_MAIN=>CREATE_XLS_FROM_ITAB(
+    EXPORTING
+      IT_FIELDCAT = EXCEL_HEADER[]
+    RECEIVING
+      E_XSTRING   = DATA(RV_XSTRING)
+      ).
+
+    IF RV_XSTRING IS NOT INITIAL.
+
+      "Excel download address
+      CALL METHOD CL_GUI_FRONTEND_SERVICES=>FILE_SAVE_DIALOG
+        EXPORTING
+          WINDOW_TITLE      = 'File Directory'
+          DEFAULT_EXTENSION = 'XLSX'
+          INITIAL_DIRECTORY = 'D:\'
+        CHANGING
+          FILENAME          = V_FILENAME
+          PATH              = V_PATH
+          FULLPATH          = V_FULLPATH
+          USER_ACTION       = V_RESULT.
+
+      "Convert to binary coode
+      CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+        EXPORTING
+          BUFFER        = RV_XSTRING
+        IMPORTING
+          OUTPUT_LENGTH = V_SIZE
+        TABLES
+          BINARY_TAB    = T_BINTAB.
+
+      "Download
+      CALL METHOD CL_GUI_FRONTEND_SERVICES=>GUI_DOWNLOAD
+        EXPORTING
+          BIN_FILESIZE            = V_SIZE
+          FILENAME                = V_FULLPATH
+          FILETYPE                = 'BIN'
+        CHANGING
+          DATA_TAB                = T_BINTAB
+        EXCEPTIONS
+          FILE_WRITE_ERROR        = 1
+          NO_BATCH                = 2
+          GUI_REFUSE_FILETRANSFER = 3
+          INVALID_TYPE            = 4
+          NO_AUTHORITY            = 5
+          UNKNOWN_ERROR           = 6
+          HEADER_NOT_ALLOWED      = 7
+          SEPARATOR_NOT_ALLOWED   = 8
+          FILESIZE_NOT_ALLOWED    = 9
+          HEADER_TOO_LONG         = 10
+          DP_ERROR_CREATE         = 11
+          DP_ERROR_SEND           = 12
+          DP_ERROR_WRITE          = 13
+          UNKNOWN_DP_ERROR        = 14
+          ACCESS_DENIED           = 15
+          DP_OUT_OF_MEMORY        = 16
+          DISK_FULL               = 17
+          DP_TIMEOUT              = 18
+          FILE_NOT_FOUND          = 19
+          DATAPROVIDER_EXCEPTION  = 20
+          CONTROL_FLUSH_ERROR     = 21
+          NOT_SUPPORTED_BY_GUI    = 22
+          ERROR_NO_GUI            = 23
+          OTHERS                  = 24.
+      IF SY-SUBRC IS INITIAL.
+        MESSAGE |Excel download successful| TYPE 'S'.
+      ELSE.
+        MESSAGE |Excel download failed|     TYPE 'S'
+                                            DISPLAY LIKE 'E'.
+      ENDIF.
+    ELSE.
+      MESSAGE |Excel Failed to Convert|     TYPE 'S'
+                                            DISPLAY LIKE 'E'.
+    ENDIF.
+
+
+  ENDMETHOD.
+
+  METHOD GET_EXCEL_FIELD.
+
+    CLEAR: NEW_FIELDS[], EXCEL_HEADER[].
+
+    "Get Data
+    SELECT * FROM ZBC_T_SALES_DOC
+        INTO CORRESPONDING FIELDS OF TABLE @NEW_FIELDS.
+
+    SORT NEW_FIELDS BY EXCEL_COLON_NO ASCENDING.
+
+    "Fieldcatalog
+    LOOP AT NEW_FIELDS INTO NEW_FIELD.
+      APPEND VALUE #( FIELDNAME = NEW_FIELD-FIELDNAME
+                      DOMNAME   = NEW_FIELD-DOMNAME
+                      COLTEXT   = NEW_FIELD-DESCRIPTION
+                   ) TO EXCEL_HEADER.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD SCREEN.
+
+    DATA: REF_DATA TYPE REF TO DATA.
+    FIELD-SYMBOLS: <DREF> TYPE ANY.
+    CREATE DATA REF_DATA LIKE I_TABLE.
+    ASSIGN REF_DATA->* TO <DREF>.
+    <DREF> = I_TABLE.
+
+    TRY.
+        CL_SALV_TABLE=>FACTORY(
+          IMPORTING
+            R_SALV_TABLE   = GO_SALV
+          CHANGING
+            T_TABLE        = <DREF>
+        ).
+
+        IF I_FLAG = ABAP_TRUE.
+          "Fieldcatalog
+          DATA(FCATS) = CL_SALV_CONTROLLER_METADATA=>GET_LVC_FIELDCATALOG(
+                         R_COLUMNS      = GO_SALV->GET_COLUMNS( )
+                         R_AGGREGATIONS = GO_SALV->GET_AGGREGATIONS( )
+                       ).
+
+          "Editable Colon
+          API = GO_SALV->EXTENDED_GRID_API( ).
+          EDIT = API->EDITABLE_RESTRICTED( ).
+
+          LOOP AT FCATS INTO DATA(FCAT).
+
+            EDIT->SET_ATTRIBUTES_FOR_COLUMNNAME(
+            EXPORTING
+              COLUMNNAME = FCAT-FIELDNAME
+              ALL_CELLS_INPUT_ENABLED = ABAP_TRUE
+            ).
+
+          ENDLOOP.
+        ENDIF.
+
+        "Gui Status(GUI STATUS copied from SAPSALV program)
+        GO_SALV->SET_SCREEN_STATUS(
+          EXPORTING
+            REPORT        = SY-REPID
+            PFSTATUS      = I_GUI_NAME
+            SET_FUNCTIONS = CL_SALV_TABLE=>C_FUNCTIONS_ALL
+        ).
+
+
+        "Events
+        DATA(EVENTS) = GO_SALV->GET_EVENT( ).
+        SET HANDLER LCL_MAIN=>FUNCTIONS FOR EVENTS.
+
+        "Selection Mode
+        SELECTIONS = GO_SALV->GET_SELECTIONS( ).
+        SELECTIONS->SET_SELECTION_MODE( IF_SALV_C_SELECTION_MODE=>ROW_COLUMN ).
+
+        "Zebra
+        DISPLAY = GO_SALV->GET_DISPLAY_SETTINGS( ).
+        DISPLAY->SET_STRIPED_PATTERN( CL_SALV_DISPLAY_SETTINGS=>TRUE ).
+
+        "Optimize
+        COLUMNS = GO_SALV->GET_COLUMNS( ).
+        COLUMNS->SET_OPTIMIZE( 'X' ).
+
+        IF I_FLAG = ABAP_TRUE.
+
+          "Hide Column
+          DATA(COLON) = COLUMNS->GET_COLUMN( COLUMNNAME = |MANDT| ).
+          COLON->SET_VISIBLE( VALUE = IF_SALV_C_BOOL_SAP=>FALSE ).
+          "Display Popup.
+          GO_SALV->SET_SCREEN_POPUP(
+            EXPORTING
+              START_COLUMN = 10
+              END_COLUMN   = 75
+              START_LINE   = 8
+              END_LINE     = 25
+          ).
+
+        ENDIF.
+        GO_SALV->DISPLAY( ).
+      CATCH CX_ROOT INTO DATA(LO_ROOT).
+        DATA(ERROR) = LO_ROOT->GET_TEXT( ).
+        MESSAGE ERROR TYPE 'S' DISPLAY LIKE 'E'.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD FUNCTIONS.
+
+    CASE SY-UCOMM.
+      WHEN '&ADD_ROW'.
+
+        CLEAR NEW_FIELD.
+        APPEND NEW_FIELD TO NEW_FIELDS.
+        CLEAR NEW_FIELD.
+
+      WHEN '&SAVE_ROW'.
+
+        DELETE FROM ZBC_T_SALES_DOC.
+        INSERT ZBC_T_SALES_DOC FROM TABLE NEW_FIELDS.
+
+        MESSAGE |The entered fields have been successfully saved| TYPE 'S'.
+        SET SCREEN 0.
+
+      WHEN '&CREATE'.
+
+        DATA: ORDER_HEADER  TYPE BAPISDHEAD,
+              ORDER_ITEMS   TYPE TABLE OF BAPIITEMIN,
+              ORDER_PARTNER TYPE TABLE OF BAPIPARTNR,
+              RETURN_ERROR  TYPE BAPIRETURN1,
+              TABLE_RETURN  TYPE TABLE OF BAPIRET2.
+        DATA: R_VBELN TYPE VBAK-VBELN.
+
+        CLEAR: ORDER_HEADER, ORDER_ITEMS[], ORDER_PARTNER[],
+               RETURN_ERROR.
+
+        BREAK D_BCAVUS.
+
+        LOOP AT <ITAB> ASSIGNING <STRUCTURE>.
+          DATA(LV_INDEX) = SY-TABIX.
+*"--> Header
+          "Sales Document Type
+          ASSIGN COMPONENT |AUART|
+                OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE>).
+          ORDER_HEADER-DOC_TYPE = <VALUE>.
+
+          "Division
+          ASSIGN COMPONENT |SPART|
+                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+          ORDER_HEADER-DIVISION = <VALUE>.
+
+          "Sales Organization
+          ASSIGN COMPONENT |VKORG|
+                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+          ORDER_HEADER-SALES_ORG = <VALUE>.
+
+          "Distribution Channel
+          ASSIGN COMPONENT |VTWEG|
+                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+          ORDER_HEADER-DISTR_CHAN = <VALUE>.
+
+*"--> Item
+          ASSIGN COMPONENT |MATNR|
+                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+
+          ASSIGN COMPONENT |KWMENG|
+                OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE2>).
+
+          APPEND VALUE #( MATERIAL = <VALUE>    "Material Number
+                          REQ_QTY  = <VALUE2>   "Order qty in sales units
+                      ) TO ORDER_ITEMS.
+
+*"--> PARTNER
+
+          "SHIP-TO-PARTY
+          ASSIGN COMPONENT |SHIP_KUNNR|
+                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+
+          APPEND VALUE #( PARTN_NUMB = <VALUE>
+                          PARTN_ROLE = |AG|
+                      ) TO ORDER_PARTNER.
+
+          "SOLD-TO PARTY
+          ASSIGN COMPONENT |SOLD_KUNNR|
+                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+
+          APPEND VALUE #( PARTN_NUMB = <VALUE>
+                          PARTN_ROLE = |WE|
+                      ) TO ORDER_PARTNER.
+
+*"--> Run Create Bapi
+          CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT1'
+            EXPORTING
+              ORDER_HEADER_IN = ORDER_HEADER
+            IMPORTING
+              SALESDOCUMENT   = R_VBELN
+              RETURN          = RETURN_ERROR
+            TABLES
+              ORDER_ITEMS_IN  = ORDER_ITEMS
+              ORDER_PARTNERS  = ORDER_PARTNER.
+
+          IF R_VBELN IS NOT INITIAL.
+            DATA(MSG) = | Document number { R_VBELN } has been created. |.
+            APPEND VALUE #( TYPE    = |S|
+                            MESSAGE = MSG
+                           ) TO TABLE_RETURN.
+            CLEAR MSG.
+          ELSE.
+            DATA(ERROR) = |Please the { RETURN_ERROR-MESSAGE } error on line { LV_INDEX } |.
+            APPEND VALUE #( TYPE    = |E|
+                            MESSAGE = ERROR
+                           ) TO TABLE_RETURN.
+            CLEAR ERROR.
+          ENDIF.
+        ENDLOOP.
+      WHEN OTHERS.
+    ENDCASE.
+
+    CALL FUNCTION 'RSCRMBW_DISPLAY_BAPIRET2'
+      TABLES
+        IT_RETURN = TABLE_RETURN[].
+
+    GO_SALV->REFRESH( ).
+  ENDMETHOD.
+
+  METHOD UPLOAD_EXCEL_FILE.
+
+    CALL METHOD CL_GUI_FRONTEND_SERVICES=>FILE_OPEN_DIALOG
+      EXPORTING
+        WINDOW_TITLE = 'Select Excel File...'
+      CHANGING
+        FILE_TABLE   = FILE_TABLE
+        RC           = RC.
+    IF SY-SUBRC EQ 0.
+      READ TABLE FILE_TABLE INTO DATA(LS_FILE_TABLE) INDEX 1.
+      P_FILE = LS_FILE_TABLE-FILENAME.
+    ELSE.
+      MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+      WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD RUN.
+
+    CASE ABAP_TRUE.
+      WHEN P_1. "Create Sales Document
+        IF P_FILE IS NOT INITIAL.
+          LCL_MAIN=>READ_EXCEL_FILE( ).
+        ELSE.
+          MESSAGE |Please upload excel file..| TYPE 'S' DISPLAY LIKE 'E'.
+          EXIT.
+        ENDIF.
+      WHEN P_2. "View Created Sales Documents
+
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD READ_EXCEL_FILE.
+    CL_PROGRESS_INDICATOR=>PROGRESS_INDICATE(
+      EXPORTING
+        I_TEXT               = |Uploading excel file...|
+        I_PROCESSED          = 0
+        I_TOTAL              = 1
+        I_OUTPUT_IMMEDIATELY = ABAP_FALSE
+    ).
+
+    CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+      EXPORTING
+        FILENAME                = P_FILE
+        I_BEGIN_COL             = 1
+        I_BEGIN_ROW             = 1
+        I_END_COL               = 100
+        I_END_ROW               = 25001
+      TABLES
+        INTERN                  = EXCEL_DATA
+      EXCEPTIONS
+        INCONSISTENT_PARAMETERS = 1
+        UPLOAD_OLE              = 2
+        OTHERS                  = 3.
+    IF SY-SUBRC IS INITIAL.
+
+      LCL_MAIN=>GET_EXCEL_FIELD( ).
+      LCL_MAIN=>CREATE_DYNAMIC_ITAB( ).
+
+      LCL_MAIN=>SCREEN(
+        EXPORTING
+          I_TABLE    = <ITAB>
+          I_GUI_NAME = |ZSTATUS2|
+          I_FLAG     = ABAP_FALSE
+      ).
+
+    ELSE.
+      MESSAGE |An error occurred while loading the excel file !|
+          TYPE 'S' DISPLAY LIKE 'E'.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD CREATE_DYNAMIC_ITAB.
+    "Fieldcatalog Definitins
+    DATA: FCATS TYPE LVC_T_FCAT,
+          FCAT  TYPE LVC_S_FCAT.
+    "Index
+    DATA: LV_INDEX TYPE I.
+    "Number of rows in the table
+    DATA(LINES) = LINES( EXCEL_HEADER ).
+
+*"--> Create Fieldcatalog
+    CLEAR LV_INDEX.
+    DO LINES TIMES.
+
+      LV_INDEX = LV_INDEX + 1.
+      DATA(EXCEL) = EXCEL_DATA[ COL = LV_INDEX ].
+      DATA(FIELD) = NEW_FIELDS[ DESCRIPTION = EXCEL-VALUE  ].
+
+      FCAT-FIELDNAME = FIELD-FIELDNAME.
+      FCAT-REF_FIELD = FIELD-DOMNAME.
+      FCAT-REF_TABLE = FIELD-REF_TABLE.
+      FCAT-COLTEXT   = FIELD-DESCRIPTION.
+
+      APPEND FCAT TO FCATS.
+      CLEAR: FCAT, FIELD, EXCEL.
+
+    ENDDO.
+
+*"--> Create Dynamic Table
+    CALL METHOD CL_ALV_TABLE_CREATE=>CREATE_DYNAMIC_TABLE
+      EXPORTING
+        IT_FIELDCATALOG = FCATS[]
+      IMPORTING
+        EP_TABLE        = DATA(I_NEW_TABLE).
+    ASSIGN I_NEW_TABLE->* TO <ITAB>.
+
+    CLEAR NEW_ITAB.
+    CREATE DATA NEW_ITAB LIKE LINE OF <ITAB>.
+    ASSIGN NEW_ITAB->* TO <STRUCTURE>.
+
+    "Create Dynamic Screen
+    CLEAR: LV_INDEX, FIELD, EXCEL, FCAT.
+    LOOP AT EXCEL_DATA INTO DATA(LS_EXCEL)
+                                WHERE ROW GE 2.
+
+      LV_INDEX = LV_INDEX + 1.
+      FIELD    = NEW_FIELDS[ LV_INDEX  ].
+
+      ASSIGN COMPONENT FIELD-FIELDNAME
+            OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE>).
+
+      <VALUE> = LS_EXCEL-VALUE.
+
+      CLEAR: FIELD.
+
+      AT END OF ROW.
+        APPEND <STRUCTURE> TO <ITAB>.
+        CLEAR: <STRUCTURE>, LV_INDEX.
+      ENDAT.
+
+      CLEAR: LS_EXCEL.
+    ENDLOOP.
+
+  ENDMETHOD.
+ENDCLASS.

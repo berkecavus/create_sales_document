@@ -1,0 +1,35 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBC_SALES_DOCUMENT_CREATE_TOP
+*&---------------------------------------------------------------------*
+
+TABLES : SSCRFIELDS,
+         VBAK.
+
+SELECTION-SCREEN FUNCTION KEY 1.  "Button for excel template
+SELECTION-SCREEN FUNCTION KEY 2.  "Button to add field
+
+*"--> SALV definitions
+DATA: GO_SALV    TYPE REF TO CL_SALV_TABLE.
+
+DATA: SELECTIONS TYPE REF TO CL_SALV_SELECTIONS,
+      DISPLAY    TYPE REF TO CL_SALV_DISPLAY_SETTINGS,
+      COLUMNS    TYPE REF TO CL_SALV_COLUMNS.
+
+DATA: API  TYPE REF TO IF_SALV_GUI_OM_EXTEND_GRID_API,
+      EDIT TYPE REF TO IF_SALV_GUI_OM_EDIT_RESTRICTED.
+
+DATA: NEW_FIELDS TYPE TABLE OF ZBC_T_SALES_DOC,
+      NEW_FIELD  TYPE ZBC_T_SALES_DOC.
+
+*"--> For excel template
+DATA: EXCEL_HEADER TYPE LVC_T_FCAT.
+
+"*--> For excel upload
+DATA: FILE_TABLE TYPE FILETABLE,
+      RC         TYPE I.
+DATA: EXCEL_DATA TYPE TABLE OF ALSMEX_TABLINE.
+
+"*--> Fieldsymbol definitions
+DATA: NEW_ITAB TYPE REF TO DATA.
+FIELD-SYMBOLS: <ITAB>      TYPE STANDARD TABLE,
+               <STRUCTURE> .

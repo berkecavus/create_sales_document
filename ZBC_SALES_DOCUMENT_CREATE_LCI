@@ -310,96 +310,100 @@ CLASS LCL_MAIN IMPLEMENTATION.
         SET SCREEN 0.
 
       WHEN '&CREATE'.
+        IF P_1 = ABAP_TRUE.
+          DATA: ORDER_HEADER  TYPE BAPISDHEAD,
+                ORDER_ITEMS   TYPE TABLE OF BAPIITEMIN,
+                ORDER_PARTNER TYPE TABLE OF BAPIPARTNR,
+                RETURN_ERROR  TYPE BAPIRETURN1,
+                TABLE_RETURN  TYPE TABLE OF BAPIRET2.
+          DATA: R_VBELN TYPE VBAK-VBELN.
 
-        DATA: ORDER_HEADER  TYPE BAPISDHEAD,
-              ORDER_ITEMS   TYPE TABLE OF BAPIITEMIN,
-              ORDER_PARTNER TYPE TABLE OF BAPIPARTNR,
-              RETURN_ERROR  TYPE BAPIRETURN1,
-              TABLE_RETURN  TYPE TABLE OF BAPIRET2.
-        DATA: R_VBELN TYPE VBAK-VBELN.
+          CLEAR: ORDER_HEADER, ORDER_ITEMS[], ORDER_PARTNER[],
+                 RETURN_ERROR.
 
-        CLEAR: ORDER_HEADER, ORDER_ITEMS[], ORDER_PARTNER[],
-               RETURN_ERROR.
-
-        BREAK D_BCAVUS.
-
-        LOOP AT <ITAB> ASSIGNING <STRUCTURE>.
-          DATA(LV_INDEX) = SY-TABIX.
+          LOOP AT <ITAB> ASSIGNING <STRUCTURE>.
+            DATA(LV_INDEX) = SY-TABIX.
 *"--> Header
-          "Sales Document Type
-          ASSIGN COMPONENT |AUART|
-                OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE>).
-          ORDER_HEADER-DOC_TYPE = <VALUE>.
+            "Sales Document Type
+            ASSIGN COMPONENT |AUART|
+                  OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE>).
+            ORDER_HEADER-DOC_TYPE = <VALUE>.
 
-          "Division
-          ASSIGN COMPONENT |SPART|
-                OF STRUCTURE <STRUCTURE> TO <VALUE>.
-          ORDER_HEADER-DIVISION = <VALUE>.
+            "Division
+            ASSIGN COMPONENT |SPART|
+                  OF STRUCTURE <STRUCTURE> TO <VALUE>.
+            ORDER_HEADER-DIVISION = <VALUE>.
 
-          "Sales Organization
-          ASSIGN COMPONENT |VKORG|
-                OF STRUCTURE <STRUCTURE> TO <VALUE>.
-          ORDER_HEADER-SALES_ORG = <VALUE>.
+            "Sales Organization
+            ASSIGN COMPONENT |VKORG|
+                  OF STRUCTURE <STRUCTURE> TO <VALUE>.
+            ORDER_HEADER-SALES_ORG = <VALUE>.
 
-          "Distribution Channel
-          ASSIGN COMPONENT |VTWEG|
-                OF STRUCTURE <STRUCTURE> TO <VALUE>.
-          ORDER_HEADER-DISTR_CHAN = <VALUE>.
+            "Distribution Channel
+            ASSIGN COMPONENT |VTWEG|
+                  OF STRUCTURE <STRUCTURE> TO <VALUE>.
+            ORDER_HEADER-DISTR_CHAN = <VALUE>.
 
 *"--> Item
-          ASSIGN COMPONENT |MATNR|
-                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+            ASSIGN COMPONENT |MATNR|
+                  OF STRUCTURE <STRUCTURE> TO <VALUE>.
 
-          ASSIGN COMPONENT |KWMENG|
-                OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE2>).
+            ASSIGN COMPONENT |KWMENG|
+                  OF STRUCTURE <STRUCTURE> TO FIELD-SYMBOL(<VALUE2>).
 
-          APPEND VALUE #( MATERIAL = <VALUE>    "Material Number
-                          REQ_QTY  = <VALUE2>   "Order qty in sales units
-                      ) TO ORDER_ITEMS.
+            APPEND VALUE #( MATERIAL = <VALUE>    "Material Number
+                            REQ_QTY  = <VALUE2>   "Order qty in sales units
+                        ) TO ORDER_ITEMS.
 
 *"--> PARTNER
 
-          "SHIP-TO-PARTY
-          ASSIGN COMPONENT |SHIP_KUNNR|
-                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+            "SHIP-TO-PARTY
+            ASSIGN COMPONENT |SHIP_KUNNR|
+                  OF STRUCTURE <STRUCTURE> TO <VALUE>.
 
-          APPEND VALUE #( PARTN_NUMB = <VALUE>
-                          PARTN_ROLE = |AG|
-                      ) TO ORDER_PARTNER.
+            APPEND VALUE #( PARTN_NUMB = <VALUE>
+                            PARTN_ROLE = |AG|
+                        ) TO ORDER_PARTNER.
 
-          "SOLD-TO PARTY
-          ASSIGN COMPONENT |SOLD_KUNNR|
-                OF STRUCTURE <STRUCTURE> TO <VALUE>.
+            "SOLD-TO PARTY
+            ASSIGN COMPONENT |SOLD_KUNNR|
+                  OF STRUCTURE <STRUCTURE> TO <VALUE>.
 
-          APPEND VALUE #( PARTN_NUMB = <VALUE>
-                          PARTN_ROLE = |WE|
-                      ) TO ORDER_PARTNER.
+            APPEND VALUE #( PARTN_NUMB = <VALUE>
+                            PARTN_ROLE = |WE|
+                        ) TO ORDER_PARTNER.
 
 *"--> Run Create Bapi
-          CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT1'
-            EXPORTING
-              ORDER_HEADER_IN = ORDER_HEADER
-            IMPORTING
-              SALESDOCUMENT   = R_VBELN
-              RETURN          = RETURN_ERROR
-            TABLES
-              ORDER_ITEMS_IN  = ORDER_ITEMS
-              ORDER_PARTNERS  = ORDER_PARTNER.
+            CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT1'
+              EXPORTING
+                ORDER_HEADER_IN = ORDER_HEADER
+              IMPORTING
+                SALESDOCUMENT   = R_VBELN
+                RETURN          = RETURN_ERROR
+              TABLES
+                ORDER_ITEMS_IN  = ORDER_ITEMS
+                ORDER_PARTNERS  = ORDER_PARTNER.
 
-          IF R_VBELN IS NOT INITIAL.
-            DATA(MSG) = | Document number { R_VBELN } has been created. |.
-            APPEND VALUE #( TYPE    = |S|
-                            MESSAGE = MSG
-                           ) TO TABLE_RETURN.
-            CLEAR MSG.
-          ELSE.
-            DATA(ERROR) = |Please the { RETURN_ERROR-MESSAGE } error on line { LV_INDEX } |.
-            APPEND VALUE #( TYPE    = |E|
-                            MESSAGE = ERROR
-                           ) TO TABLE_RETURN.
-            CLEAR ERROR.
-          ENDIF.
-        ENDLOOP.
+            IF R_VBELN IS NOT INITIAL.
+              DATA(MSG) = | Document number { R_VBELN } has been created. |.
+              APPEND VALUE #( TYPE    = |S|
+                              MESSAGE = MSG
+                             ) TO TABLE_RETURN.
+              CLEAR MSG.
+            ELSE.
+              DATA(ERROR) = |Please the { RETURN_ERROR-MESSAGE } error on line { LV_INDEX } |.
+              APPEND VALUE #( TYPE    = |E|
+                              MESSAGE = ERROR
+                             ) TO TABLE_RETURN.
+              CLEAR ERROR.
+            ENDIF.
+          ENDLOOP.
+        ELSE.
+          APPEND VALUE #( TYPE    = |E|
+                          MESSAGE = |This button is inactive on the display screen|
+                         ) TO TABLE_RETURN.
+          CLEAR ERROR.
+        ENDIF.
       WHEN OTHERS.
     ENDCASE.
 
@@ -439,7 +443,7 @@ CLASS LCL_MAIN IMPLEMENTATION.
           EXIT.
         ENDIF.
       WHEN P_2. "View Created Sales Documents
-
+        LCL_MAIN=>VIEW_SALES_DOCUMENTS( ).
     ENDCASE.
   ENDMETHOD.
 
@@ -547,4 +551,21 @@ CLASS LCL_MAIN IMPLEMENTATION.
     ENDLOOP.
 
   ENDMETHOD.
+
+  METHOD VIEW_SALES_DOCUMENTS.
+    SELECT * FROM VBAK
+        INTO TABLE @DATA(T_SALES_DOCUMENTS)
+            WHERE VKORG IN @S_VKORG
+              AND AUART IN @S_AUART
+              AND ERDAT IN @S_ERDAT.
+
+    LCL_MAIN=>SCREEN(
+      EXPORTING
+        I_TABLE    = T_SALES_DOCUMENTS
+        I_GUI_NAME = |ZSTATUS2|
+        I_FLAG     = ABAP_FALSE
+    ).
+
+  ENDMETHOD.
+
 ENDCLASS.
